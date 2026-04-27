@@ -1,0 +1,21 @@
+# Entornos Virtuales
+venv/
+env/
+.env
+
+# Archivos compilados de Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Archivos del Sistema Operativo
+.DS_Store
+Thumbs.db
+
+# Configuración de IDEs (VSCode, PyCharm, etc.)
+.vscode/
+.idea/
+
+# Multimedia temporal (evitar subir videos de prueba pesados)
+*.mp4
+*.avi
