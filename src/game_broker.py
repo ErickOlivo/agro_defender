@@ -3,6 +3,7 @@ import random
 import pygame
 from src.entities.impact import Impact
 from src.entities.enemy import Enemy
+from src.entities.ladybug import GoldenLadybug
 from src.entities.score_popup import ScorePopup
 import sys
 from src.config import (
@@ -55,6 +56,7 @@ class GameBroker:
         # Sprite Groups
         self.all_sprites = pygame.sprite.Group()
         self.enemies = pygame.sprite.Group()
+        self.powerups = pygame.sprite.Group()
         
         self.all_sprites.add(self.plant)
         self.all_sprites.add(self.player)
@@ -73,6 +75,8 @@ class GameBroker:
         
         for enemy in self.enemies:
             enemy.kill()
+        for p in self.powerups:
+            p.kill()
         self.start_time = pygame.time.get_ticks()
         self.state = "PLAYING"
 
@@ -101,13 +105,12 @@ class GameBroker:
         for hit in hits:
             # --- COMBO LOGIC ---
             self.combo += 1
-            # Every 5 hits, the multiplier increases (1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3...)
             self.multiplier = 1 + (self.combo // 5)
             
             points_to_add = 10 * self.multiplier
             self.score += points_to_add
             
-            # Visual Feedback with the dynamic score
+            # Visual Feedback
             splat = Impact(hit.rect.centerx, hit.rect.centery)
             popup = ScorePopup(hit.rect.centerx, hit.rect.centery, text=f"+{points_to_add}")
             
@@ -118,20 +121,29 @@ class GameBroker:
         plant_hits = pygame.sprite.spritecollide(self.plant, self.enemies, True)
         for hit in plant_hits:
             self.lives -= 1
-            
-            # --- RESET COMBO ON DAMAGE ---
             self.combo = 0
             self.multiplier = 1
-
             self.shake_intensity = 15
             
             if self.lives <= 0:
                 self.state = "GAME_OVER"
 
-        # 3. Enemy falls off screen (Cleanup)
+        # --- 3. NUEVA: Player catches Golden Ladybug (Heal) ---
+        # Detectamos si la mano toca a la mariquita dorada
+        healing_hits = pygame.sprite.spritecollide(self.player, self.powerups, True)
+        for hit in healing_hits:
+            self.lives += 1  # Incrementamos vida
+            
+            # Feedback visual: Texto flotante indicando la curación
+            popup = ScorePopup(hit.rect.centerx, hit.rect.centery, text="LIFE +1")
+            # Opcional: Un pequeño shake suave y positivo
+            self.shake_intensity = 5 
+            
+            self.all_sprites.add(popup)
+
+        # 4. Enemy falls off screen (Cleanup)
         for enemy in self.enemies:
             if enemy.rect.top > WINDOW_HEIGHT:
-                # OPTIONAL: You could also reset combo here if you want to be more strict
                 enemy.kill()
                 
     def update_state(self):
@@ -155,6 +167,14 @@ class GameBroker:
                 self.enemies.add(new_enemy)
                 self.all_sprites.add(new_enemy)
                 self.last_spawn_time = current_time
+            # --- SPAWN DE LADYBUG (RRECUPEACIÓN DE VIDA) ---
+            # Un 0.3% de probabilidad por frame (Aprox. una cada 5-6 segundos)
+            if random.random() < 0.003:
+                # Solo permitimos una mariquita en pantalla a la vez para que sea valiosa
+                if len(self.powerups) == 0:
+                    lady = GoldenLadybug()
+                    self.powerups.add(lady)
+                    self.all_sprites.add(lady)
 
             self.all_sprites.update()
             self.check_collisions()
