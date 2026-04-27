@@ -1,4 +1,5 @@
 import os
+import random
 import pygame
 from src.entities.impact import Impact
 from src.entities.enemy import Enemy
@@ -43,6 +44,7 @@ class GameBroker:
         self.lives = PLAYER_LIVES
         self.combo = 0
         self.multiplier = 1
+        self.shake_intensity = 0
         self.start_time = 0
         self.last_spawn_time = 0
         
@@ -120,6 +122,8 @@ class GameBroker:
             # --- RESET COMBO ON DAMAGE ---
             self.combo = 0
             self.multiplier = 1
+
+            self.shake_intensity = 15
             
             if self.lives <= 0:
                 self.state = "GAME_OVER"
@@ -166,18 +170,40 @@ class GameBroker:
         self.screen.blit(surface, rect)
 
     def render(self):
+        # --- 1. LÓGICA DE CÁLCULO DEL SHAKE ---
+        offset_x = 0
+        offset_y = 0
+        
+        if self.shake_intensity > 0:
+            # Generamos un movimiento aleatorio basado en la intensidad actual
+            offset_x = random.randint(-self.shake_intensity, self.shake_intensity)
+            offset_y = random.randint(-self.shake_intensity, self.shake_intensity)
+            # Reducimos la intensidad para que la sacudida se detenga gradualmente
+            self.shake_intensity -= 1 
+
+        # --- 2. DIBUJAR EL FONDO (Con el offset aplicado) ---
         if self.bg_image:
-            self.screen.blit(self.bg_image, (0, 0))
+            # Ahora el fondo no siempre se dibuja en (0,0), sino que "vibra"
+            self.screen.blit(self.bg_image, (offset_x, offset_y))
         else:
             self.screen.fill(COLOR_BLACK)
         
+        # --- 3. DIBUJAR ESTADOS ---
         if self.state == "START":
-            self.player.update() # Draw player hand
-            self.screen.blit(self.player.image, self.player.rect)
-            self.draw_text("AGRO-DEFENDER", self.font_large, COLOR_WHITE, WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 50, True)
-            self.draw_text("Press SPACE to Start", self.font_medium, COLOR_WHITE, WINDOW_WIDTH//2, WINDOW_HEIGHT//2 + 50, True)
+            self.player.update() 
+            # También aplicamos el offset a la mano en el inicio para coherencia visual
+            temp_rect = self.player.rect.copy()
+            temp_rect.x += offset_x
+            temp_rect.y += offset_y
+            self.screen.blit(self.player.image, temp_rect)
+            
+            self.draw_text("AGRO-DEFENDER", self.font_large, COLOR_WHITE, WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 - 50 + offset_y, True)
+            self.draw_text("Press SPACE to Start", self.font_medium, COLOR_WHITE, WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 + 50 + offset_y, True)
             
         elif self.state == "PLAYING":
+            # Para que los sprites también vibren, podemos dibujarlos en una superficie temporal 
+            # o simplemente desplazar sus posiciones de dibujo. 
+            # Por simplicidad, los dibujaremos normalmente, el fondo vibrando ya da el 80% del efecto.
             self.all_sprites.draw(self.screen)
             
             # HUD (Heads Up Display)
@@ -188,7 +214,6 @@ class GameBroker:
             self.draw_text(f"Lives: {self.lives}", self.font_medium, COLOR_WHITE, 20, 60)
 
             if self.combo > 0:
-                # Color dorado (255, 215, 0) si el multiplicador es mayor a 1
                 combo_color = (255, 215, 0) if self.multiplier > 1 else COLOR_WHITE
                 self.draw_text(f"Combo: {self.combo} (x{self.multiplier})", 
                                self.font_medium, combo_color, 20, 100)
@@ -196,7 +221,7 @@ class GameBroker:
             self.draw_text(f"Time: {time_left}s", self.font_medium, COLOR_WHITE, WINDOW_WIDTH - 200, 20)
             
         elif self.state == "GAME_OVER":
-            self.player.update() # Draw player hand
+            self.player.update() 
             self.screen.blit(self.player.image, self.player.rect)
             self.draw_text("GAME OVER", self.font_large, COLOR_WHITE, WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 50, True)
             self.draw_text(f"Final Score: {self.score}", self.font_medium, COLOR_WHITE, WINDOW_WIDTH//2, WINDOW_HEIGHT//2 + 20, True)
@@ -204,6 +229,7 @@ class GameBroker:
 
         pygame.display.flip()
 
+   
     def run(self):
         print("[INFO] Starting Vision Worker Thread...")
         self.vision_worker.start()
