@@ -41,6 +41,8 @@ class GameBroker:
         self.state = "START"  # States: START, PLAYING, GAME_OVER
         self.score = 0
         self.lives = PLAYER_LIVES
+        self.combo = 0
+        self.multiplier = 1
         self.start_time = 0
         self.last_spawn_time = 0
         
@@ -63,6 +65,10 @@ class GameBroker:
         """Resets variables for a new game."""
         self.score = 0
         self.lives = PLAYER_LIVES
+
+        self.combo = 0
+        self.multiplier = 1
+        
         for enemy in self.enemies:
             enemy.kill()
         self.start_time = pygame.time.get_ticks()
@@ -91,13 +97,17 @@ class GameBroker:
         # 1. Player hits Enemy (Crush pest)
         hits = pygame.sprite.spritecollide(self.player, self.enemies, True)
         for hit in hits:
-            self.score += 10
+            # --- COMBO LOGIC ---
+            self.combo += 1
+            # Every 5 hits, the multiplier increases (1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3...)
+            self.multiplier = 1 + (self.combo // 5)
             
-            # --- VISUAL FEEDBACK ---
-            # Spawn the green splat
+            points_to_add = 10 * self.multiplier
+            self.score += points_to_add
+            
+            # Visual Feedback with the dynamic score
             splat = Impact(hit.rect.centerx, hit.rect.centery)
-            # Spawn the floating "+10" text
-            popup = ScorePopup(hit.rect.centerx, hit.rect.centery, text="+10")
+            popup = ScorePopup(hit.rect.centerx, hit.rect.centery, text=f"+{points_to_add}")
             
             self.all_sprites.add(splat)
             self.all_sprites.add(popup)
@@ -106,12 +116,18 @@ class GameBroker:
         plant_hits = pygame.sprite.spritecollide(self.plant, self.enemies, True)
         for hit in plant_hits:
             self.lives -= 1
+            
+            # --- RESET COMBO ON DAMAGE ---
+            self.combo = 0
+            self.multiplier = 1
+            
             if self.lives <= 0:
                 self.state = "GAME_OVER"
 
         # 3. Enemy falls off screen (Cleanup)
         for enemy in self.enemies:
             if enemy.rect.top > WINDOW_HEIGHT:
+                # OPTIONAL: You could also reset combo here if you want to be more strict
                 enemy.kill()
                 
     def update_state(self):
@@ -170,6 +186,13 @@ class GameBroker:
             
             self.draw_text(f"Score: {self.score}", self.font_medium, COLOR_WHITE, 20, 20)
             self.draw_text(f"Lives: {self.lives}", self.font_medium, COLOR_WHITE, 20, 60)
+
+            if self.combo > 0:
+                # Color dorado (255, 215, 0) si el multiplicador es mayor a 1
+                combo_color = (255, 215, 0) if self.multiplier > 1 else COLOR_WHITE
+                self.draw_text(f"Combo: {self.combo} (x{self.multiplier})", 
+                               self.font_medium, combo_color, 20, 100)
+            
             self.draw_text(f"Time: {time_left}s", self.font_medium, COLOR_WHITE, WINDOW_WIDTH - 200, 20)
             
         elif self.state == "GAME_OVER":
