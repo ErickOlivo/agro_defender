@@ -34,3 +34,7 @@ SPAWN_RATE_MILLISECONDS = 800
 CAMERA_INDEX = 0  # 0 is usually the default built-in webcam
 CV_DETECTION_CONFIDENCE = 0.7
 CV_TRACKING_CONFIDENCE = 0.7
+
+# --- AUDIO CONFIG ---
+MUSIC_VOLUME = 0.3  # Volumen de la música (0.0 a 1.0)
+SFX_VOLUME = 0.6    # Volumen de los efectos (0.0 a 1.0)

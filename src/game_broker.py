@@ -8,7 +8,7 @@ from src.entities.score_popup import ScorePopup
 import sys
 from src.config import (
     WINDOW_WIDTH, WINDOW_HEIGHT, FPS, COLOR_BLACK, COLOR_WHITE, 
-    SPAWN_RATE_MILLISECONDS, GAME_DURATION_SECONDS, PLAYER_LIVES
+    SPAWN_RATE_MILLISECONDS, GAME_DURATION_SECONDS, PLAYER_LIVES, MUSIC_VOLUME, SFX_VOLUME
 )
 from src.entities.player import Player
 from src.entities.enemy import Enemy
@@ -64,6 +64,26 @@ class GameBroker:
         # Vision Worker
         self.vision_worker = VisionWorker()
 
+        # --- AUDIO INITIALIZATION ---
+        pygame.mixer.init()
+        
+        # 1. Cargar y configurar Efectos de Sonido (SFX)
+        self.snd_splat = pygame.mixer.Sound("assets/sounds/splat.wav")
+        self.snd_damage = pygame.mixer.Sound("assets/sounds/damage.wav")
+        self.snd_heal = pygame.mixer.Sound("assets/sounds/heal.wav")
+        
+        # Aplicar volumen independiente a los efectos
+        self.snd_splat.set_volume(SFX_VOLUME)
+        self.snd_damage.set_volume(SFX_VOLUME)
+        self.snd_heal.set_volume(SFX_VOLUME)
+        
+        # 2. Cargar y configurar Música de Fondo
+        # Usamos mixer.music porque hace streaming del archivo (consume menos RAM)
+        pygame.mixer.music.load("assets/sounds/bg_music.wav")
+        pygame.mixer.music.set_volume(MUSIC_VOLUME)
+        # Reproducir en loop infinito (-1)
+        pygame.mixer.music.play(-1)
+
 
     def reset_game(self):
         """Resets variables for a new game."""
@@ -89,6 +109,13 @@ class GameBroker:
                 if event.key == pygame.K_SPACE:
                     if self.state in ["START", "GAME_OVER"]:
                         self.reset_game()
+                    # Tecla M para mutear/desmutear la música
+                    if event.key == pygame.K_m:
+                        if pygame.mixer.music.get_busy():
+                            if pygame.mixer.music.get_volume() > 0:
+                                pygame.mixer.music.set_volume(0)
+                            else:
+                                pygame.mixer.music.set_volume(MUSIC_VOLUME)
 
     def spawn_enemy(self, current_time):
         """Spawns a new enemy based on the spawn rate."""
@@ -104,6 +131,7 @@ class GameBroker:
         hits = pygame.sprite.spritecollide(self.player, self.enemies, True)
         for hit in hits:
             # --- COMBO LOGIC ---
+            self.snd_splat.play()
             self.combo += 1
             self.multiplier = 1 + (self.combo // 5)
             
@@ -120,6 +148,7 @@ class GameBroker:
         # 2. Enemy hits Plant (Damage)
         plant_hits = pygame.sprite.spritecollide(self.plant, self.enemies, True)
         for hit in plant_hits:
+            self.snd_damage.play()
             self.lives -= 1
             self.combo = 0
             self.multiplier = 1
@@ -132,6 +161,7 @@ class GameBroker:
         # Detectamos si la mano toca a la mariquita dorada
         healing_hits = pygame.sprite.spritecollide(self.player, self.powerups, True)
         for hit in healing_hits:
+            self.snd_heal.play()
             self.lives += 1  # Incrementamos vida
             
             # Feedback visual: Texto flotante indicando la curación
