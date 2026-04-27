@@ -17,12 +17,16 @@ class Player(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect.center = (0, 0)
 
-    def update(self, x: int, y: int):
+    def set_position(self, x: int, y: int):
         """
         Updates the player's coordinates.
-        
-        Args:
-            x (int): The new X coordinate (from mouse or CV worker).
-            y (int): The new Y coordinate (from mouse or CV worker).
+        Called directly by the broker when receiving tracking data.
         """
         self.rect.center = (x, y)
+
+    def update(self):
+        """
+        Standard Pygame method called by sprite groups.
+        Required to avoid argument mismatch errors.
+        """
+        pass

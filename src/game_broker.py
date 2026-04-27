@@ -32,15 +32,16 @@ class GameBroker:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
-            # We can add keystrokes like 'R' to restart here later
 
     def update_state(self):
         """Updates physics, positions, and game logic."""
         # For Phase 2: Simulate the CV Hand Tracking using the mouse position
         mouse_x, mouse_y = pygame.mouse.get_pos()
         
-        # Send the simulated coordinates to the player entity
-        self.player.update(mouse_x, mouse_y)
+        # Send the simulated coordinates to the player entity using the new method
+        self.player.set_position(mouse_x, mouse_y)
+        
+        # Safely calls the parameterless .update() on all sprites (enemies, etc.)
         self.all_sprites.update()
 
     def render(self):
