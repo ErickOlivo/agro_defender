@@ -1,4 +1,8 @@
+import os
 import pygame
+from src.entities.impact import Impact
+from src.entities.enemy import Enemy
+from src.entities.score_popup import ScorePopup
 import sys
 from src.config import (
     WINDOW_WIDTH, WINDOW_HEIGHT, FPS, COLOR_BLACK, COLOR_WHITE, 
@@ -21,6 +25,18 @@ class GameBroker:
         self.font_large = pygame.font.SysFont("Arial", 64, bold=True)
         self.font_medium = pygame.font.SysFont("Arial", 36, bold=True)
         
+        # ==========================================
+        # NEW: Background Loading Logic
+        # ==========================================
+        self.bg_image = None
+        bg_path = os.path.join("assets", "images", "background.png")
+        try:
+            # .convert() optimizes the image for faster blitting to the screen
+            loaded_bg = pygame.image.load(bg_path).convert()
+            self.bg_image = pygame.transform.smoothscale(loaded_bg, (WINDOW_WIDTH, WINDOW_HEIGHT))
+        except FileNotFoundError:
+            print(f"[WARNING] Background image not found at {bg_path}")
+            
         # Game State Variables
         self.state = "START"  # States: START, PLAYING, GAME_OVER
         self.score = 0
@@ -41,6 +57,7 @@ class GameBroker:
         
         # Vision Worker
         self.vision_worker = VisionWorker()
+
 
     def reset_game(self):
         """Resets variables for a new game."""
@@ -76,6 +93,15 @@ class GameBroker:
         for hit in hits:
             self.score += 10
             
+            # --- VISUAL FEEDBACK ---
+            # Spawn the green splat
+            splat = Impact(hit.rect.centerx, hit.rect.centery)
+            # Spawn the floating "+10" text
+            popup = ScorePopup(hit.rect.centerx, hit.rect.centery, text="+10")
+            
+            self.all_sprites.add(splat)
+            self.all_sprites.add(popup)
+            
         # 2. Enemy hits Plant (Damage)
         plant_hits = pygame.sprite.spritecollide(self.plant, self.enemies, True)
         for hit in plant_hits:
@@ -87,8 +113,9 @@ class GameBroker:
         for enemy in self.enemies:
             if enemy.rect.top > WINDOW_HEIGHT:
                 enemy.kill()
-
+                
     def update_state(self):
+        """Updates physics, positions, and game logic."""
         # Always update player position via webcam thread
         self.player.set_position(self.vision_worker.hand_x, self.vision_worker.hand_y)
         
@@ -100,7 +127,15 @@ class GameBroker:
             if remaining_time == 0:
                 self.state = "GAME_OVER"
             
-            self.spawn_enemy(current_time)
+            # Progressive Difficulty: Faster spawns as time runs out
+            dynamic_spawn_rate = max(200, int(SPAWN_RATE_MILLISECONDS * (remaining_time / GAME_DURATION_SECONDS)))
+            
+            if current_time - self.last_spawn_time > dynamic_spawn_rate:
+                new_enemy = Enemy()
+                self.enemies.add(new_enemy)
+                self.all_sprites.add(new_enemy)
+                self.last_spawn_time = current_time
+
             self.all_sprites.update()
             self.check_collisions()
 
@@ -115,7 +150,10 @@ class GameBroker:
         self.screen.blit(surface, rect)
 
     def render(self):
-        self.screen.fill(COLOR_BLACK)
+        if self.bg_image:
+            self.screen.blit(self.bg_image, (0, 0))
+        else:
+            self.screen.fill(COLOR_BLACK)
         
         if self.state == "START":
             self.player.update() # Draw player hand
