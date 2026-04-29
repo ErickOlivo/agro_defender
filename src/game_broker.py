@@ -71,6 +71,14 @@ class GameBroker:
         # --- CREACIÓN DE LAS 3 PLANTAS ---
         self.plants = pygame.sprite.Group()
         self.effects = pygame.sprite.Group()
+
+        # ==========================================
+        # NEW: FEVER MODE SYSTEM  <--- AÑADE ESTO AQUÍ
+        # ==========================================
+        self.is_fever_mode = False
+        self.fever_duration = 5000  # 5 segundos de frenesí
+        self.fever_start_time = 0
+        self.fever_threshold = 7    # Se activa a los 7 kills
         
         # Las distribuimos a lo ancho de la pantalla (25%, 50% y 75%)
         plant1 = Plant(WINDOW_WIDTH // 4, WINDOW_HEIGHT - 10)
@@ -163,7 +171,6 @@ class GameBroker:
         """Handles logic when objects overlap."""
         
         # 1. Player hits Enemy (Crush pest)
-        # Añadimos collide_mask para que aplastar bichos sea súper preciso
         hits = pygame.sprite.spritecollide(self.player, self.enemies, True, pygame.sprite.collide_mask)
         for hit in hits:
             # --- COMBO LOGIC ---
@@ -171,14 +178,21 @@ class GameBroker:
             self.combo += 1
             self.multiplier = 1 + (self.combo // 5)
             
-            points_to_add = 10 * self.multiplier
+            # --- NUEVO: FIEBRE LOGIC ---
+            # Multiplicador x3 si estamos en modo fiebre
+            fever_multiplier = 3 if self.is_fever_mode else 1
+            points_to_add = 10 * self.multiplier * fever_multiplier
             self.score += points_to_add
+            
+            # ACTIVAR FIEBRE si llega a 7 kills seguidos (y no está ya activa)
+            if self.combo >= self.fever_threshold and not self.is_fever_mode:
+                self.activate_fever_mode()
+            # ---------------------------
             
             # --- Visual Feedback ---
             splat = Impact(hit.rect.centerx, hit.rect.centery)
             popup = ScorePopup(hit.rect.centerx, hit.rect.centery, text=f"+{points_to_add}")
             
-            # ¡CRUCIAL! Añadirlos a effects para que se actualicen y desaparezcan
             self.effects.add(splat, popup)
             self.all_sprites.add(splat, popup)
             
@@ -193,6 +207,11 @@ class GameBroker:
                 self.multiplier = 1
                 self.shake_intensity = 15
                 
+                # --- NUEVO: CANCELAR FIEBRE SI RECIBES DAÑO ---
+                if getattr(self, 'is_fever_mode', False):
+                    self.deactivate_fever_mode()
+                # ----------------------------------------------
+                
                 if self.lives <= 0:
                     self.state = "GAME_OVER"
 
@@ -201,21 +220,17 @@ class GameBroker:
                         self.save_high_score()
 
         # 3. Player catches Power-ups (Merge Ladybug and Freeze)
-        # Hacemos una sola verificación para todo lo que esté en self.powerups
         powerup_hits = pygame.sprite.spritecollide(self.player, self.powerups, True, pygame.sprite.collide_mask)
         for p in powerup_hits:
-            # Identificamos qué tipo de power-up acabamos de atrapar
             clase_powerup = p.__class__.__name__
             
             if clase_powerup == "GoldenLadybug":
                 self.snd_heal.play()
-                # Limitamos la vida máxima a 3 para no tener vidas infinitas
                 self.lives = min(3, self.lives + 1) 
                 
                 popup = ScorePopup(p.rect.centerx, p.rect.centery, text="LIFE +1")
                 self.shake_intensity = 5 
                 
-                # Añadir popup a effects para que flote y desaparezca
                 self.effects.add(popup)
                 self.all_sprites.add(popup)
                 
@@ -228,7 +243,50 @@ class GameBroker:
         for enemy in self.enemies:
             if enemy.rect.top > WINDOW_HEIGHT:
                 enemy.kill()
-                
+    def activate_fever_mode(self):
+        """Activa el modo frenesí: Mano gigante y música acelerada."""
+        self.is_fever_mode = True
+        self.fever_start_time = pygame.time.get_ticks()
+        
+        # 1. AGRANDAR LA MANO (A 140px)
+        orig_w, orig_h = self.player.image.get_size()
+        target_w = 140  
+        target_h = int(orig_h * (target_w / orig_w))
+        self.player.image = pygame.transform.smoothscale(self.player.image, (target_w, target_h))
+        # Mantenemos el centro en el mismo lugar para que no "salte" visualmente
+        self.player.rect = self.player.image.get_rect(center=self.player.rect.center)
+        self.player.mask = pygame.mask.from_surface(self.player.image)
+
+        # 2. CAMBIAR MÚSICA (Con un try-except por si aún no tienes el archivo de audio)
+        try:
+            pygame.mixer.music.load(os.path.join("assets", "sounds", "bgm_fever.wav"))
+            pygame.mixer.music.play(-1)
+        except Exception:
+            print("[DEBUG] No se encontró bgm_fever.wav, la música seguirá normal.")
+
+    def deactivate_fever_mode(self):
+        """Desactiva el modo frenesí y restaura los valores normales."""
+        self.is_fever_mode = False
+        self.combo = 0 
+        
+        # 1. RESTAURAR MANO (Volver a 80px)
+        target_w = 80
+        orig_w, orig_h = self.player.image.get_size()
+        target_h = int(orig_h * (target_w / orig_w))
+        self.player.image = pygame.transform.smoothscale(self.player.image, (target_w, target_h))
+        self.player.rect = self.player.image.get_rect(center=self.player.rect.center)
+        self.player.mask = pygame.mask.from_surface(self.player.image)
+
+        # 2. RESTAURAR MÚSICA NORMAL (El archivo que pusiste en tu __init__)
+        try:
+            pygame.mixer.music.load(os.path.join("assets", "sounds", "bg_music.wav"))
+            pygame.mixer.music.play(-1)
+        except Exception:
+            pass
+
+
+
+            
     def update_state(self):
         """Updates physics, positions, and game logic."""
         # Always update player position via webcam thread
