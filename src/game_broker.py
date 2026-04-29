@@ -4,6 +4,7 @@ import pygame
 from src.entities.impact import Impact
 from src.entities.enemy import Enemy
 from src.entities.ladybug import GoldenLadybug
+from src.entities.grasshopper import Grasshopper
 from src.entities.score_popup import ScorePopup
 import sys
 from src.config import (
@@ -242,6 +243,12 @@ class GameBroker:
                     lady = GoldenLadybug()
                     self.powerups.add(lady)
                     self.all_sprites.add(lady)
+
+            # En el bucle de spawn de enemigos dentro de update_state:
+            if random.random() < 0.02: # 2% de probabilidad por frame de que salga un saltamontes
+                new_grasshopper = Grasshopper()
+                self.enemies.add(new_grasshopper)
+                self.all_sprites.add(new_grasshopper)
 
             self.all_sprites.update()
             self.check_collisions()
