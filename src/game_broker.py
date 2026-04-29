@@ -56,14 +56,27 @@ class GameBroker:
         
         # Initialize Entities
         self.player = Player()
-        self.plant = Plant()
-        
+
         # Sprite Groups
         self.all_sprites = pygame.sprite.Group()
         self.enemies = pygame.sprite.Group()
         self.powerups = pygame.sprite.Group()
         
-        self.all_sprites.add(self.plant)
+        # --- CREACIÓN DE LAS 3 PLANTAS ---
+        self.plants = pygame.sprite.Group()
+        
+        # Las distribuimos a lo ancho de la pantalla (25%, 50% y 75%)
+        plant1 = Plant(WINDOW_WIDTH // 4, WINDOW_HEIGHT - 10)
+        plant2 = Plant(WINDOW_WIDTH // 2, WINDOW_HEIGHT - 10)
+        plant3 = Plant(3 * WINDOW_WIDTH // 4, WINDOW_HEIGHT - 10)
+        
+        # Añadimos las 3 plantas a su propio grupo y al grupo general
+        self.plants.add(plant1, plant2, plant3)
+        self.all_sprites.add(plant1, plant2, plant3)
+        
+
+        
+
         self.all_sprites.add(self.player)
         
         # Vision Worker
@@ -159,21 +172,23 @@ class GameBroker:
             self.all_sprites.add(splat)
             self.all_sprites.add(popup)
             
-        # 2. Enemy hits Plant (Damage)
-        plant_hits = pygame.sprite.spritecollide(self.plant, self.enemies, True)
-        for hit in plant_hits:
-            self.snd_damage.play()
-            self.lives -= 1
-            self.combo = 0
-            self.multiplier = 1
-            self.shake_intensity = 15
-            
-            if self.lives <= 0:
-                self.state = "GAME_OVER"
+        # 2. Enemy hits ANY Plant (Damage)
+        plant_hits = pygame.sprite.groupcollide(self.plants, self.enemies, False, True, collided=pygame.sprite.collide_mask)
+        
+        for plant, enemies_that_hit in plant_hits.items():
+            for hit in enemies_that_hit:
+                self.snd_damage.play()
+                self.lives -= 1
+                self.combo = 0
+                self.multiplier = 1
+                self.shake_intensity = 15
+                
+                if self.lives <= 0:
+                    self.state = "GAME_OVER"
 
-                if self.score > self.high_score:
-                    self.high_score = self.score
-                    self.save_high_score()
+                    if self.score > self.high_score:
+                        self.high_score = self.score
+                        self.save_high_score()
 
         # --- 3. NUEVA: Player catches Golden Ladybug (Heal) ---
         # Detectamos si la mano toca a la mariquita dorada
