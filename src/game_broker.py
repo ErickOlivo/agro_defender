@@ -7,6 +7,7 @@ from src.entities.ladybug import GoldenLadybug
 from src.entities.grasshopper import Grasshopper
 from src.entities.freeze import FreezePowerUp
 from src.entities.score_popup import ScorePopup
+from src.ui.virtual_button import HoverButton
 import sys
 from src.config import (
     WINDOW_WIDTH, WINDOW_HEIGHT, FPS, COLOR_BLACK, COLOR_WHITE, 
@@ -125,7 +126,21 @@ class GameBroker:
             self.heart_image = pygame.transform.smoothscale(loaded_heart, (30, 30))
         except FileNotFoundError:
             print(f"[WARNING] Heart image not found at {heart_path}")
-
+            
+        # ==========================================
+        # NEW: SISTEMA DE BOTONES VIRTUALES (HOVER)
+        # ==========================================
+        # Definimos el tamaño y centramos los botones en la parte inferior
+        btn_w, btn_h = 300, 60
+        btn_x = (WINDOW_WIDTH // 2) - (btn_w // 2)
+        btn_y = WINDOW_HEIGHT - 120
+        
+        self.btn_start = HoverButton(btn_x, btn_y, btn_w, btn_h, "INICIAR JUEGO", self.font_medium)
+        self.btn_resume = HoverButton(btn_x, btn_y, btn_w, btn_h, "REANUDAR", self.font_medium)
+        self.btn_restart = HoverButton(btn_x, btn_y, btn_w, btn_h, "REINTENTAR", self.font_medium)
+        
+        # Temporizador para no perder tiempo de juego mientras está en pausa
+        self.pause_start_time = 0
 
     def reset_game(self):
         """Resets variables for a new game."""
@@ -292,17 +307,59 @@ class GameBroker:
         # Always update player position via webcam thread
         self.player.set_position(self.vision_worker.hand_x, self.vision_worker.hand_y)
         
-        if self.state == "PLAYING":
+        # ==========================================
+        # ESTADO: MENÚ DE INICIO
+        # ==========================================
+        if self.state == "START":
+            # Si el botón se llena al 100%, iniciamos el juego
+            if self.btn_start.update(self.player.rect):
+                self.state = "PLAYING"
+                self.start_time = pygame.time.get_ticks()
+                self.last_spawn_time = self.start_time
+                self.score = 0
+                self.lives = 3
+                self.combo = 0
+                
+        # ==========================================
+        # ESTADO: JUEGO EN PAUSA
+        # ==========================================
+        elif self.state == "PAUSED":
+            # Si el botón se llena al 100%, reanudamos
+            if self.btn_resume.update(self.player.rect):
+                self.state = "PLAYING"
+                
+                # Compensamos el tiempo que estuvimos en pausa para no perder segundos
+                pause_duration = pygame.time.get_ticks() - self.pause_start_time
+                self.start_time += pause_duration
+                self.last_spawn_time += pause_duration
+                
+                if getattr(self, 'is_frozen', False): 
+                    self.freeze_start_time += pause_duration
+                if getattr(self, 'is_fever_mode', False): 
+                    self.fever_start_time += pause_duration
+
+        # ==========================================
+        # ESTADO: JUGANDO
+        # ==========================================
+        elif self.state == "PLAYING":
+            # --- DETECCIÓN DE GESTO: PUÑO PARA PAUSAR ---
+            if self.vision_worker.is_fist:
+                self.state = "PAUSED"
+                self.pause_start_time = pygame.time.get_ticks()
+                return # Salimos del update para congelar la lógica de inmediato
+            
             current_time = pygame.time.get_ticks()
 
-            # --- 1. LÓGICA DE TEMPORIZADOR DE CONGELACIÓN ---
+            # --- 1. LÓGICA DE TEMPORIZADOR DE CONGELACIÓN Y FIEBRE ---
             if self.is_frozen:
                 if current_time - self.freeze_start_time > self.freeze_duration:
                     self.is_frozen = False
+                    
+            if getattr(self, 'is_fever_mode', False):
+                if current_time - self.fever_start_time > self.fever_duration:
+                    self.deactivate_fever_mode()
 
             # --- 2. ACTUALIZACIÓN DE MOVIMIENTOS ---
-            # Pasamos el estado de congelación a los enemigos
-            # Importante: powerups y player siguen moviéndose normalmente
             self.enemies.update(self.is_frozen) 
             self.powerups.update() 
             self.player.update()
@@ -319,7 +376,6 @@ class GameBroker:
                     self.save_high_score()
             
             # --- 4. SPAWN DE ENEMIGOS (Solo si no está congelado) ---
-            # Si quieres que dejen de nacer enemigos mientras está congelado:
             if not self.is_frozen:
                 # Enemigo Normal
                 dynamic_spawn_rate = max(200, int(SPAWN_RATE_MILLISECONDS * (remaining_time / GAME_DURATION_SECONDS)))
@@ -335,7 +391,7 @@ class GameBroker:
                     self.enemies.add(new_grasshopper)
                     self.all_sprites.add(new_grasshopper)
 
-            # --- 5. SPAWN DE POWER-UPS (Estos nacen siempre) ---
+            # --- 5. SPAWN DE POWER-UPS ---
             # Ladybug
             if random.random() < 0.003:
                 if len(self.powerups) == 0:
@@ -343,14 +399,29 @@ class GameBroker:
                     self.powerups.add(lady)
                     self.all_sprites.add(lady)
 
-            # Cristal de Hielo (Freeze)
-            if random.random() < 0.001:
+            # Cristal de Hielo (Freeze) - Ajustado a 0.003
+            if random.random() < 0.003:
                 new_freeze = FreezePowerUp()
                 self.powerups.add(new_freeze)
                 self.all_sprites.add(new_freeze)
 
             # --- 6. COLISIONES ---
             self.check_collisions()
+
+        # ==========================================
+        # ESTADO: GAME OVER
+        # ==========================================
+        elif self.state == "GAME_OVER":
+            # Si el jugador mantiene la mano sobre el botón de reintento
+            if self.btn_restart.update(self.player.rect):
+                # Reiniciamos al estado START para mostrar las instrucciones
+                # y permitir que el jugador se prepare de nuevo
+                self.state = "START"
+                
+                # Reseteamos los botones para que no se queden con progreso
+                self.btn_start.reset()
+                self.btn_restart.reset()
+                self.btn_resume.reset()
 
     def draw_text(self, text, font, color, x, y, center=False):
         """Helper method to draw text on screen."""
@@ -368,63 +439,94 @@ class GameBroker:
         offset_y = 0
         
         if self.shake_intensity > 0:
-            # Generamos un movimiento aleatorio basado en la intensidad actual
             offset_x = random.randint(-self.shake_intensity, self.shake_intensity)
             offset_y = random.randint(-self.shake_intensity, self.shake_intensity)
-            # Reducimos la intensidad para que la sacudida se detenga gradualmente
             self.shake_intensity -= 1 
 
-        # --- 2. DIBUJAR EL FONDO (Con el offset aplicado) ---
+        # --- 2. DIBUJAR EL FONDO ---
         if self.bg_image:
-            # Ahora el fondo no siempre se dibuja en (0,0), sino que "vibra"
             self.screen.blit(self.bg_image, (offset_x, offset_y))
         else:
             self.screen.fill(COLOR_BLACK)
         
-        # --- 3. DIBUJAR ESTADOS ---
+        # ==========================================
+        # ESTADO: MENÚ DE INICIO
+        # ==========================================
         if self.state == "START":
             self.player.update() 
-            # También aplicamos el offset a la mano en el inicio para coherencia visual
             temp_rect = self.player.rect.copy()
             temp_rect.x += offset_x
             temp_rect.y += offset_y
             self.screen.blit(self.player.image, temp_rect)
             
-            # --- TÍTULO Y RÉCORD (Cuarto superior de la pantalla) ---
+            # --- TÍTULO Y RÉCORD ---
             self.draw_text("AGRO-DEFENDER", self.font_large, COLOR_WHITE, WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//4 + offset_y, True)
             self.draw_text(f"RECORD: {self.high_score}", self.font_medium, (255, 215, 0), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//4 + 70 + offset_y, True)
             
-           # --- INSTRUCCIONES DE JUEGO (Centro de la pantalla) ---
+            # --- INSTRUCCIONES ACTUALIZADAS (Controles por gestos) ---
             self.draw_text("CÓMO JUGAR:", self.font_medium, (200, 200, 255), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 - 20 + offset_y, True)
-                       
-            self.draw_text("- Mueve tu mano frente a la cámara para aplastar las plagas", self.font_small, COLOR_WHITE, WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 + 25 + offset_y, True)
-                       
-            self.draw_text("- Mariquita Dorada = +1 Vida  |  Cristal de Hielo = Congelar Tiempo", self.font_small, (173, 216, 230), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 + 65 + offset_y, True)
+                        
+            self.draw_text(" Mueve la mano abierta para controlar la mira y aplastar plagas", self.font_small, COLOR_WHITE, WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 + 25 + offset_y, True)
+                        
+            self.draw_text("Cierra la mano (PUÑO) en cualquier momento para PAUSAR", self.font_small, (255, 100, 100), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 + 65 + offset_y, True)
                                    
-            self.draw_text("- Cuidado con los saltamontes, ¡se mueven en zigzag!", self.font_small, (50, 205, 50), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 + 105 + offset_y, True)
-                                   
-            self.draw_text("- ¡Aplasta sin fallar para subir tu Combo y ganar más puntos!", self.font_small, (255, 215, 0), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 + 145 + offset_y, True)
-                       
-            # --- BOTÓN DE INICIO (Anclado cerca de la parte inferior) ---
-            self.draw_text("Press SPACE to Start", self.font_medium, (50, 255, 100), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT - 120 + offset_y, True)
-            # --- CRÉDITOS DEL EQUIPO (Pegado al borde inferior) ---
+            self.draw_text("- Mariquita = +1 Vida  |  Cristal = Congelar Tiempo", self.font_small, (173, 216, 230), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 + 105 + offset_y, True)                                   
+            self.draw_text("¡7 Kills seguidos activan el MODO FIEBRE!", self.font_small, (255, 215, 0), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 + 145 + offset_y, True)
+            
+            # --- BOTÓN DE INICIO VIRTUAL ---
+            # Ya no usamos "Press SPACE", ahora dibujamos el botón virtual
+            self.btn_start.draw(self.screen)
+            
+            # --- CRÉDITOS ---
             credits_text = "Desarrollado por: Erick Olivo"
             self.draw_text(credits_text, self.font_small, (150, 150, 150), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT - 40 + offset_y, True)
             
+        # ==========================================
+        # ESTADO: JUEGO EN PAUSA
+        # ==========================================
+        elif self.state == "PAUSED":
+            # Dibujamos todo congelado de fondo
+            self.all_sprites.draw(self.screen)
+            
+            # Capa oscura
+            pause_overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+            pause_overlay.fill((0, 0, 0, 150))
+            self.screen.blit(pause_overlay, (0, 0))
+            
+            self.draw_text("JUEGO EN PAUSA", self.font_large, COLOR_WHITE, WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 50, True)
+            
+            # Dibujamos el botón para reanudar
+            self.btn_resume.draw(self.screen)
+            
+            # Dibujamos la mano por encima para interactuar
+            self.player.update()
+            self.screen.blit(self.player.image, self.player.rect)
+
+        # ==========================================
+        # ESTADO: JUGANDO
+        # ==========================================
         elif self.state == "PLAYING":
             self.all_sprites.draw(self.screen)
             
             # --- EFECTO VISUAL DE HIELO (OVERLAY) ---
             if getattr(self, 'is_frozen', False):
-                # Capa semitransparente azul
                 freeze_overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
                 freeze_overlay.fill((173, 216, 230, 80)) 
                 self.screen.blit(freeze_overlay, (0, 0))
                 
-                # Texto centrado indicando el congelamiento
                 freeze_text = self.font_medium.render("¡TIEMPO CONGELADO!", True, (255, 255, 255))
                 text_rect = freeze_text.get_rect(center=(WINDOW_WIDTH // 2, 130))
                 self.screen.blit(freeze_text, text_rect)
+                
+            # --- EFECTO VISUAL DE FIEBRE (FRENESÍ) ---
+            if getattr(self, 'is_fever_mode', False):
+                import math
+                pulse = int(math.sin(pygame.time.get_ticks() * 0.01) * 20) + 60
+                frenzy_overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+                frenzy_overlay.fill((255, 69, 0, pulse)) # Naranja rojizo parpadeante
+                self.screen.blit(frenzy_overlay, (0, 0))
+                
+                self.draw_text("¡FRENESÍ: CULTIVO PROTEGIDO!", self.font_large, (255, 255, 0), WINDOW_WIDTH//2, 130, True)
             
             # --- HUD (Heads Up Display) ---
             current_time = pygame.time.get_ticks()
@@ -446,14 +548,21 @@ class GameBroker:
             
             self.draw_text(f"Time: {time_left}s", self.font_medium, COLOR_WHITE, WINDOW_WIDTH - 200, 20)
             
+        # ==========================================
+        # ESTADO: GAME OVER
+        # ==========================================
         elif self.state == "GAME_OVER":
             self.player.update() 
             self.screen.blit(self.player.image, self.player.rect)
             self.draw_text("GAME OVER", self.font_large, COLOR_WHITE, WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 50, True)
             self.draw_text(f"Final Score: {self.score}", self.font_medium, COLOR_WHITE, WINDOW_WIDTH//2, WINDOW_HEIGHT//2 + 20, True)
-            self.draw_text("Press SPACE to Restart", self.font_medium, COLOR_WHITE, WINDOW_WIDTH//2, WINDOW_HEIGHT//2 + 80, True)
+            # AQUÍ TE DEJO EL ESPACIO POR SI LUEGO QUIERES PONER BOTÓN DE REINICIO TAMBIÉN
             self.draw_text(f"RECORD: {self.high_score}", self.font_medium, (255, 215, 0), WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 90, True)
-            
+
+            self.btn_restart.draw(self.screen)         
+
+        # Dibuja un pequeño punto guía en el centro de la mira para precisión extra
+        pygame.draw.circle(self.screen, (0, 255, 255), self.player.rect.center, 5)     
         pygame.display.flip()
    
     def run(self):

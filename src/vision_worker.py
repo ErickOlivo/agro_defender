@@ -1,4 +1,5 @@
 import cv2
+import math  # <-- NUEVO: Necesario para calcular distancias (math.hypot)
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
@@ -15,6 +16,7 @@ class VisionWorker(threading.Thread):
         super().__init__()
         self.daemon = True 
         self.running = True
+        self.is_fist = False
         
         self.hand_x = WINDOW_WIDTH // 2
         self.hand_y = WINDOW_HEIGHT // 2
@@ -53,9 +55,10 @@ class VisionWorker(threading.Thread):
             
             # If hands are detected, extract the coordinates
             if detection_result.hand_landmarks:
-                # Extract landmark 9 (Middle Finger MCP - center of palm)
                 # Note: hand_landmarks is a list of hands, we take the first one [0]
                 hand = detection_result.hand_landmarks[0]
+                
+                # Extract landmark 9 (Middle Finger MCP - center of palm)
                 normalized_x = hand[9].x
                 normalized_y = hand[9].y
                 
@@ -65,6 +68,38 @@ class VisionWorker(threading.Thread):
                 
                 self.hand_x = screen_x
                 self.hand_y = screen_y
+                
+                # ==========================================
+                # NUEVA LÓGICA: DETECCIÓN DE PUÑO CERRADO
+                # ==========================================
+                wrist = hand[0] # Muñeca
+                
+                def is_finger_curled(tip_idx, pip_idx):
+                    """
+                    Compara la distancia de la punta del dedo (tip) a la muñeca
+                    vs la articulación intermedia (pip) a la muñeca.
+                    Si la punta está más cerca, el dedo está encogido.
+                    """
+                    tip = hand[tip_idx]
+                    pip = hand[pip_idx]
+                    dist_tip = math.hypot(tip.x - wrist.x, tip.y - wrist.y)
+                    dist_pip = math.hypot(pip.x - wrist.x, pip.y - wrist.y)
+                    return dist_tip < dist_pip
+
+                # Revisamos: Índice(8,6), Medio(12,10), Anular(16,14) y Meñique(20,18)
+                fingers_curled = [
+                    is_finger_curled(8, 6),
+                    is_finger_curled(12, 10),
+                    is_finger_curled(16, 14),
+                    is_finger_curled(20, 18)
+                ]
+                
+                # Si los 4 dedos principales están encogidos, es un puño
+                self.is_fist = all(fingers_curled)
+                
+            else:
+                # Si no se detecta ninguna mano, no hay puño
+                self.is_fist = False
                     
         cap.release()
         
