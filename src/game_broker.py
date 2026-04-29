@@ -77,7 +77,7 @@ class GameBroker:
         # NEW: FEVER MODE SYSTEM  <--- AÑADE ESTO AQUÍ
         # ==========================================
         self.is_fever_mode = False
-        self.fever_duration = 5000  # 5 segundos de frenesí
+        self.fever_duration = 10000  # 5 segundos de frenesí
         self.fever_start_time = 0
         self.fever_threshold = 7    # Se activa a los 7 kills
         
@@ -216,23 +216,27 @@ class GameBroker:
         
         for plant, enemies_that_hit in plant_hits.items():
             for hit in enemies_that_hit:
-                self.snd_damage.play()
-                self.lives -= 1
-                self.combo = 0
-                self.multiplier = 1
-                self.shake_intensity = 15
-                
-                # --- NUEVO: CANCELAR FIEBRE SI RECIBES DAÑO ---
-                if getattr(self, 'is_fever_mode', False):
-                    self.deactivate_fever_mode()
-                # ----------------------------------------------
-                
-                if self.lives <= 0:
-                    self.state = "GAME_OVER"
-
-                    if self.score > self.high_score:
-                        self.high_score = self.score
-                        self.save_high_score()
+                # --- NUEVA LÓGICA DE PROTECCIÓN ---
+                if self.is_fever_mode:
+                    # Si estamos en fiebre, el bicho muere pero NO hay daño ni reset
+                    self.snd_splat.play() 
+                    # Opcional: añadir un splat visual aquí también
+                    splat = Impact(hit.rect.centerx, hit.rect.centery)
+                    self.effects.add(splat)
+                    self.all_sprites.add(splat)
+                else:
+                    # Solo recibimos daño si NO estamos en fiebre
+                    self.snd_damage.play()
+                    self.lives -= 1
+                    self.combo = 0
+                    self.multiplier = 1
+                    self.shake_intensity = 15
+                    
+                    if self.lives <= 0:
+                        self.state = "GAME_OVER"
+                        if self.score > self.high_score:
+                            self.high_score = self.score
+                            self.save_high_score()
 
         # 3. Player catches Power-ups (Merge Ladybug and Freeze)
         powerup_hits = pygame.sprite.spritecollide(self.player, self.powerups, True, pygame.sprite.collide_mask)
@@ -518,16 +522,27 @@ class GameBroker:
                 text_rect = freeze_text.get_rect(center=(WINDOW_WIDTH // 2, 130))
                 self.screen.blit(freeze_text, text_rect)
                 
-            # --- EFECTO VISUAL DE FIEBRE (FRENESÍ) ---
+            # --- EFECTO VISUAL DE FRENESÍ (FRENESÍ) ---
             if getattr(self, 'is_fever_mode', False):
                 import math
-                pulse = int(math.sin(pygame.time.get_ticks() * 0.01) * 20) + 60
+                current_time = pygame.time.get_ticks()
+                
+                # Calculamos el tiempo restante del frenesí
+                fever_elapsed = current_time - self.fever_start_time
+                fever_time_left = max(0, (self.fever_duration - fever_elapsed) // 1000)
+                
+                # Overlay parpadeante
+                pulse = int(math.sin(current_time * 0.01) * 20) + 60
                 frenzy_overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
-                frenzy_overlay.fill((255, 69, 0, pulse)) # Naranja rojizo parpadeante
+                frenzy_overlay.fill((255, 69, 0, pulse)) 
                 self.screen.blit(frenzy_overlay, (0, 0))
                 
+                # Mensaje de estado
                 self.draw_text("¡FRENESÍ: CULTIVO PROTEGIDO!", self.font_large, (255, 255, 0), WINDOW_WIDTH//2, 130, True)
-            
+                
+                # CRONÓMETRO DEL FRENESÍ
+                self.draw_text(f"TIEMPO RESTANTE: {fever_time_left}s", self.font_medium, (255, 255, 255), WINDOW_WIDTH//2, 190, True)
+                
             # --- HUD (Heads Up Display) ---
             current_time = pygame.time.get_ticks()
             time_left = max(0, GAME_DURATION_SECONDS - ((current_time - self.start_time) // 1000))
