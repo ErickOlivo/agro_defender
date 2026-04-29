@@ -51,7 +51,9 @@ class Enemy(pygame.sprite.Sprite):
         
         self.speed = random.randint(ENEMY_SPEED_MIN, ENEMY_SPEED_MAX)
 
-    def update(self):
+    def update(self, is_frozen=False):
+        if is_frozen:
+            return
         # Mover hacia abajo
         self.rect.y += self.speed
         

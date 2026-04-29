@@ -5,6 +5,7 @@ from src.entities.impact import Impact
 from src.entities.enemy import Enemy
 from src.entities.ladybug import GoldenLadybug
 from src.entities.grasshopper import Grasshopper
+from src.entities.freeze import FreezePowerUp
 from src.entities.score_popup import ScorePopup
 import sys
 from src.config import (
@@ -62,6 +63,10 @@ class GameBroker:
         self.all_sprites = pygame.sprite.Group()
         self.enemies = pygame.sprite.Group()
         self.powerups = pygame.sprite.Group()
+
+        self.is_frozen = False
+        self.freeze_duration = 3000
+        self.freeze_start_time = 0
         
         # --- CREACIÓN DE LAS 3 PLANTAS ---
         self.plants = pygame.sprite.Group()
@@ -205,6 +210,14 @@ class GameBroker:
             
             self.all_sprites.add(popup)
 
+        # Colisión Jugador vs Power-ups
+        powerup_hits = pygame.sprite.spritecollide(self.player, self.powerups, True, pygame.sprite.collide_mask)
+        for p in powerup_hits:
+            if isinstance(p, FreezePowerUp):
+                self.is_frozen = True
+                self.freeze_start_time = pygame.time.get_ticks()
+                # self.snd_freeze.play() # Opcional si tienes sonido de hielo
+
         # 4. Enemy falls off screen (Cleanup)
         for enemy in self.enemies:
             if enemy.rect.top > WINDOW_HEIGHT:
@@ -217,40 +230,61 @@ class GameBroker:
         
         if self.state == "PLAYING":
             current_time = pygame.time.get_ticks()
+
+            # --- 1. LÓGICA DE TEMPORIZADOR DE CONGELACIÓN ---
+            if self.is_frozen:
+                if current_time - self.freeze_start_time > self.freeze_duration:
+                    self.is_frozen = False
+
+            # --- 2. ACTUALIZACIÓN DE MOVIMIENTOS ---
+            # Pasamos el estado de congelación a los enemigos
+            # Importante: powerups y player siguen moviéndose normalmente
+            self.enemies.update(self.is_frozen) 
+            self.powerups.update() 
+            self.player.update()
+
+            # --- 3. LÓGICA DE TIEMPO DE JUEGO ---
             elapsed_seconds = (current_time - self.start_time) // 1000
             remaining_time = max(0, GAME_DURATION_SECONDS - elapsed_seconds)
             
             if remaining_time == 0:
                 self.state = "GAME_OVER"
-
                 if self.score > self.high_score:
                     self.high_score = self.score
                     self.save_high_score()
             
-            # Progressive Difficulty: Faster spawns as time runs out
-            dynamic_spawn_rate = max(200, int(SPAWN_RATE_MILLISECONDS * (remaining_time / GAME_DURATION_SECONDS)))
-            
-            if current_time - self.last_spawn_time > dynamic_spawn_rate:
-                new_enemy = Enemy()
-                self.enemies.add(new_enemy)
-                self.all_sprites.add(new_enemy)
-                self.last_spawn_time = current_time
-            # --- SPAWN DE LADYBUG (RRECUPEACIÓN DE VIDA) ---
-            # Un 0.3% de probabilidad por frame (Aprox. una cada 5-6 segundos)
+            # --- 4. SPAWN DE ENEMIGOS (Solo si no está congelado) ---
+            # Si quieres que dejen de nacer enemigos mientras está congelado:
+            if not self.is_frozen:
+                # Enemigo Normal
+                dynamic_spawn_rate = max(200, int(SPAWN_RATE_MILLISECONDS * (remaining_time / GAME_DURATION_SECONDS)))
+                if current_time - self.last_spawn_time > dynamic_spawn_rate:
+                    new_enemy = Enemy()
+                    self.enemies.add(new_enemy)
+                    self.all_sprites.add(new_enemy)
+                    self.last_spawn_time = current_time
+
+                # Saltamontes (Grasshopper)
+                if random.random() < 0.02:
+                    new_grasshopper = Grasshopper()
+                    self.enemies.add(new_grasshopper)
+                    self.all_sprites.add(new_grasshopper)
+
+            # --- 5. SPAWN DE POWER-UPS (Estos nacen siempre) ---
+            # Ladybug
             if random.random() < 0.003:
-                # Solo permitimos una mariquita en pantalla a la vez para que sea valiosa
                 if len(self.powerups) == 0:
                     lady = GoldenLadybug()
                     self.powerups.add(lady)
                     self.all_sprites.add(lady)
 
-            # En el bucle de spawn de enemigos dentro de update_state:
-            if random.random() < 0.02: # 2% de probabilidad por frame de que salga un saltamontes
-                new_grasshopper = Grasshopper()
-                self.enemies.add(new_grasshopper)
-                self.all_sprites.add(new_grasshopper)
+            # Cristal de Hielo (Freeze)
+            if random.random() < 0.001:
+                new_freeze = FreezePowerUp()
+                self.powerups.add(new_freeze)
+                self.all_sprites.add(new_freeze)
 
-            self.all_sprites.update()
+            # --- 6. COLISIONES ---
             self.check_collisions()
 
     def draw_text(self, text, font, color, x, y, center=False):
