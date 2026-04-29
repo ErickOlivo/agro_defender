@@ -26,6 +26,7 @@ class GameBroker:
         # UI Fonts
         self.font_large = pygame.font.SysFont("Arial", 64, bold=True)
         self.font_medium = pygame.font.SysFont("Arial", 36, bold=True)
+        self.font_small = pygame.font.SysFont("Arial", 24, bold=True)
         
         # ==========================================
         # NEW: Background Loading Logic
@@ -268,10 +269,23 @@ class GameBroker:
             temp_rect.y += offset_y
             self.screen.blit(self.player.image, temp_rect)
             
-            self.draw_text("AGRO-DEFENDER", self.font_large, COLOR_WHITE, WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 - 50 + offset_y, True)
-            self.draw_text("Press SPACE to Start", self.font_medium, COLOR_WHITE, WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 + 50 + offset_y, True)
-            self.draw_text(f"RECORD: {self.high_score}", self.font_medium, (255, 215, 0), WINDOW_WIDTH//2, 50, True)
-
+            # --- TÍTULO Y RÉCORD (Cuarto superior de la pantalla) ---
+            self.draw_text("AGRO-DEFENDER", self.font_large, COLOR_WHITE, WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//4 + offset_y, True)
+            self.draw_text(f"RECORD: {self.high_score}", self.font_medium, (255, 215, 0), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//4 + 70 + offset_y, True)
+            
+            # --- INSTRUCCIONES DE JUEGO (Centro de la pantalla) ---
+            self.draw_text("CÓMO JUGAR:", self.font_medium, (200, 200, 255), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 + offset_y, True)
+            self.draw_text("- Mueve tu mano frente a la cámara para controlar el escudo", self.font_small, COLOR_WHITE, WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 + 50 + offset_y, True)
+            self.draw_text("- Aplasta las plagas antes de que toquen la planta", self.font_small, COLOR_WHITE, WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 + 90 + offset_y, True)
+            self.draw_text("- Atrapa la mariquita dorada para recuperar vidas", self.font_small, (255, 215, 0), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 + 130 + offset_y, True)
+            
+            # --- BOTÓN DE INICIO (Anclado cerca de la parte inferior) ---
+            self.draw_text("Press SPACE to Start", self.font_medium, (50, 255, 100), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT - 120 + offset_y, True)
+            
+            # --- CRÉDITOS DEL EQUIPO (Pegado al borde inferior) ---
+            credits_text = "Desarrollado por: Erick Olivo"
+            self.draw_text(credits_text, self.font_small, (150, 150, 150), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT - 40 + offset_y, True)
+            
         elif self.state == "PLAYING":
             # Para que los sprites también vibren, podemos dibujarlos en una superficie temporal 
             # o simplemente desplazar sus posiciones de dibujo. 
