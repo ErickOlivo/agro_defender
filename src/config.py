@@ -24,8 +24,8 @@ COLOR_CURSOR_BLUE = (65, 105, 225)
 # ==========================================
 GAME_DURATION_SECONDS = 60
 PLAYER_LIVES = 3
-ENEMY_SPEED_MIN = 3
-ENEMY_SPEED_MAX = 7
+ENEMY_SPEED_MIN = 2
+ENEMY_SPEED_MAX = 4
 SPAWN_RATE_MILLISECONDS = 800
 
 # ==========================================

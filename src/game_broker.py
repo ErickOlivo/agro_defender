@@ -70,6 +70,7 @@ class GameBroker:
         
         # --- CREACIÓN DE LAS 3 PLANTAS ---
         self.plants = pygame.sprite.Group()
+        self.effects = pygame.sprite.Group()
         
         # Las distribuimos a lo ancho de la pantalla (25%, 50% y 75%)
         plant1 = Plant(WINDOW_WIDTH // 4, WINDOW_HEIGHT - 10)
@@ -95,7 +96,7 @@ class GameBroker:
         self.snd_splat = pygame.mixer.Sound("assets/sounds/splat.wav")
         self.snd_damage = pygame.mixer.Sound("assets/sounds/damage.wav")
         self.snd_heal = pygame.mixer.Sound("assets/sounds/heal.wav")
-        
+        self.snd_freeze = pygame.mixer.Sound("assets/sounds/freeze.wav")
         # Aplicar volumen independiente a los efectos
         self.snd_splat.set_volume(SFX_VOLUME)
         self.snd_damage.set_volume(SFX_VOLUME)
@@ -160,8 +161,10 @@ class GameBroker:
 
     def check_collisions(self):
         """Handles logic when objects overlap."""
+        
         # 1. Player hits Enemy (Crush pest)
-        hits = pygame.sprite.spritecollide(self.player, self.enemies, True)
+        # Añadimos collide_mask para que aplastar bichos sea súper preciso
+        hits = pygame.sprite.spritecollide(self.player, self.enemies, True, pygame.sprite.collide_mask)
         for hit in hits:
             # --- COMBO LOGIC ---
             self.snd_splat.play()
@@ -171,12 +174,13 @@ class GameBroker:
             points_to_add = 10 * self.multiplier
             self.score += points_to_add
             
-            # Visual Feedback
+            # --- Visual Feedback ---
             splat = Impact(hit.rect.centerx, hit.rect.centery)
             popup = ScorePopup(hit.rect.centerx, hit.rect.centery, text=f"+{points_to_add}")
             
-            self.all_sprites.add(splat)
-            self.all_sprites.add(popup)
+            # ¡CRUCIAL! Añadirlos a effects para que se actualicen y desaparezcan
+            self.effects.add(splat, popup)
+            self.all_sprites.add(splat, popup)
             
         # 2. Enemy hits ANY Plant (Damage)
         plant_hits = pygame.sprite.groupcollide(self.plants, self.enemies, False, True, collided=pygame.sprite.collide_mask)
@@ -196,27 +200,29 @@ class GameBroker:
                         self.high_score = self.score
                         self.save_high_score()
 
-        # --- 3. NUEVA: Player catches Golden Ladybug (Heal) ---
-        # Detectamos si la mano toca a la mariquita dorada
-        healing_hits = pygame.sprite.spritecollide(self.player, self.powerups, True)
-        for hit in healing_hits:
-            self.snd_heal.play()
-            self.lives += 1  # Incrementamos vida
-            
-            # Feedback visual: Texto flotante indicando la curación
-            popup = ScorePopup(hit.rect.centerx, hit.rect.centery, text="LIFE +1")
-            # Opcional: Un pequeño shake suave y positivo
-            self.shake_intensity = 5 
-            
-            self.all_sprites.add(popup)
-
-        # Colisión Jugador vs Power-ups
+        # 3. Player catches Power-ups (Merge Ladybug and Freeze)
+        # Hacemos una sola verificación para todo lo que esté en self.powerups
         powerup_hits = pygame.sprite.spritecollide(self.player, self.powerups, True, pygame.sprite.collide_mask)
         for p in powerup_hits:
-            if isinstance(p, FreezePowerUp):
+            # Identificamos qué tipo de power-up acabamos de atrapar
+            clase_powerup = p.__class__.__name__
+            
+            if clase_powerup == "GoldenLadybug":
+                self.snd_heal.play()
+                # Limitamos la vida máxima a 3 para no tener vidas infinitas
+                self.lives = min(3, self.lives + 1) 
+                
+                popup = ScorePopup(p.rect.centerx, p.rect.centery, text="LIFE +1")
+                self.shake_intensity = 5 
+                
+                # Añadir popup a effects para que flote y desaparezca
+                self.effects.add(popup)
+                self.all_sprites.add(popup)
+                
+            elif clase_powerup == "FreezePowerUp":
+                self.snd_freeze.play()
                 self.is_frozen = True
                 self.freeze_start_time = pygame.time.get_ticks()
-                # self.snd_freeze.play() # Opcional si tienes sonido de hielo
 
         # 4. Enemy falls off screen (Cleanup)
         for enemy in self.enemies:
@@ -242,6 +248,7 @@ class GameBroker:
             self.enemies.update(self.is_frozen) 
             self.powerups.update() 
             self.player.update()
+            self.effects.update()
 
             # --- 3. LÓGICA DE TIEMPO DE JUEGO ---
             elapsed_seconds = (current_time - self.start_time) // 1000
@@ -329,41 +336,49 @@ class GameBroker:
             self.draw_text("AGRO-DEFENDER", self.font_large, COLOR_WHITE, WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//4 + offset_y, True)
             self.draw_text(f"RECORD: {self.high_score}", self.font_medium, (255, 215, 0), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//4 + 70 + offset_y, True)
             
-            # --- INSTRUCCIONES DE JUEGO (Centro de la pantalla) ---
-            self.draw_text("CÓMO JUGAR:", self.font_medium, (200, 200, 255), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 + offset_y, True)
-            self.draw_text("- Mueve tu mano frente a la cámara para controlar el escudo", self.font_small, COLOR_WHITE, WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 + 50 + offset_y, True)
-            self.draw_text("- Aplasta las plagas antes de que toquen la planta", self.font_small, COLOR_WHITE, WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 + 90 + offset_y, True)
-            self.draw_text("- Atrapa la mariquita dorada para recuperar vidas", self.font_small, (255, 215, 0), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 + 130 + offset_y, True)
-            
+           # --- INSTRUCCIONES DE JUEGO (Centro de la pantalla) ---
+            self.draw_text("CÓMO JUGAR:", self.font_medium, (200, 200, 255), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 - 20 + offset_y, True)
+                       
+            self.draw_text("- Mueve tu mano frente a la cámara para aplastar las plagas", self.font_small, COLOR_WHITE, WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 + 25 + offset_y, True)
+                       
+            self.draw_text("- Mariquita Dorada = +1 Vida  |  Cristal de Hielo = Congelar Tiempo", self.font_small, (173, 216, 230), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 + 65 + offset_y, True)
+                                   
+            self.draw_text("- Cuidado con los saltamontes, ¡se mueven en zigzag!", self.font_small, (50, 205, 50), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 + 105 + offset_y, True)
+                                   
+            self.draw_text("- ¡Aplasta sin fallar para subir tu Combo y ganar más puntos!", self.font_small, (255, 215, 0), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 + 145 + offset_y, True)
+                       
             # --- BOTÓN DE INICIO (Anclado cerca de la parte inferior) ---
             self.draw_text("Press SPACE to Start", self.font_medium, (50, 255, 100), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT - 120 + offset_y, True)
-            
             # --- CRÉDITOS DEL EQUIPO (Pegado al borde inferior) ---
             credits_text = "Desarrollado por: Erick Olivo"
             self.draw_text(credits_text, self.font_small, (150, 150, 150), WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT - 40 + offset_y, True)
             
         elif self.state == "PLAYING":
-            # Para que los sprites también vibren, podemos dibujarlos en una superficie temporal 
-            # o simplemente desplazar sus posiciones de dibujo. 
-            # Por simplicidad, los dibujaremos normalmente, el fondo vibrando ya da el 80% del efecto.
             self.all_sprites.draw(self.screen)
             
-            # HUD (Heads Up Display)
+            # --- EFECTO VISUAL DE HIELO (OVERLAY) ---
+            if getattr(self, 'is_frozen', False):
+                # Capa semitransparente azul
+                freeze_overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+                freeze_overlay.fill((173, 216, 230, 80)) 
+                self.screen.blit(freeze_overlay, (0, 0))
+                
+                # Texto centrado indicando el congelamiento
+                freeze_text = self.font_medium.render("¡TIEMPO CONGELADO!", True, (255, 255, 255))
+                text_rect = freeze_text.get_rect(center=(WINDOW_WIDTH // 2, 130))
+                self.screen.blit(freeze_text, text_rect)
+            
+            # --- HUD (Heads Up Display) ---
             current_time = pygame.time.get_ticks()
             time_left = max(0, GAME_DURATION_SECONDS - ((current_time - self.start_time) // 1000))
             
             self.draw_text(f"Score: {self.score}", self.font_medium, COLOR_WHITE, 20, 20)
-
-            # HUD (Heads Up Display)
-            self.draw_text(f"Score: {self.score}", self.font_medium, COLOR_WHITE, 20, 20)
             
-            # --- DIBUJAR CORAZONES EN LUGAR DE TEXTO ---
+            # --- DIBUJAR CORAZONES ---
             if self.heart_image:
                 for i in range(self.lives):
-                    # Los dibuja uno al lado del otro con un espacio de 35 píxeles
                     self.screen.blit(self.heart_image, (20 + (i * 35), 65))
             else:
-                # Fallback por si la imagen no carga
                 self.draw_text(f"Lives: {self.lives}", self.font_medium, COLOR_WHITE, 20, 60)
 
             if self.combo > 0:
@@ -380,8 +395,8 @@ class GameBroker:
             self.draw_text(f"Final Score: {self.score}", self.font_medium, COLOR_WHITE, WINDOW_WIDTH//2, WINDOW_HEIGHT//2 + 20, True)
             self.draw_text("Press SPACE to Restart", self.font_medium, COLOR_WHITE, WINDOW_WIDTH//2, WINDOW_HEIGHT//2 + 80, True)
             self.draw_text(f"RECORD: {self.high_score}", self.font_medium, (255, 215, 0), WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 90, True)
+            
         pygame.display.flip()
-
    
     def run(self):
         print("[INFO] Starting Vision Worker Thread...")

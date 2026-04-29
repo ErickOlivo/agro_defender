@@ -32,9 +32,9 @@ class Grasshopper(pygame.sprite.Sprite):
         self.rect.x = random.randint(100, WINDOW_WIDTH - 100)
         self.rect.y = -self.rect.height
         
-        self.speed_y = random.uniform(ENEMY_SPEED_MIN, ENEMY_SPEED_MIN + 2)
-        self.amplitude = random.randint(100, 200) # Qué tan ancho es el zigzag
-        self.frequency = random.uniform(0.02, 0.05) # Qué tan rápido oscila
+        self.speed_y = random.uniform(1.5, 2.5)
+        self.amplitude = random.randint(50, 100) # Qué tan ancho es el zigzag
+        self.frequency = random.uniform(0.01, 0.025) # Qué tan rápido oscila
         self.spawn_time = random.uniform(0, 100) # Desfase para que no todos zigzagueen igual
 
     def update(self, is_frozen=False):
