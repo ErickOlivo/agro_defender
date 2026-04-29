@@ -43,6 +43,10 @@ class GameBroker:
         self.state = "START"  # States: START, PLAYING, GAME_OVER
         self.score = 0
         self.lives = PLAYER_LIVES
+
+        self.highscore_file = "highscore.txt"
+        self.high_score = self.load_high_score()
+        
         self.combo = 0
         self.multiplier = 1
         self.shake_intensity = 0
@@ -83,6 +87,15 @@ class GameBroker:
         pygame.mixer.music.set_volume(MUSIC_VOLUME)
         # Reproducir en loop infinito (-1)
         pygame.mixer.music.play(-1)
+
+        # --- CARGAR ASSET DE VIDA ---
+        self.heart_image = None
+        heart_path = os.path.join("assets", "images", "heart.png")
+        try:
+            loaded_heart = pygame.image.load(heart_path).convert_alpha()
+            self.heart_image = pygame.transform.smoothscale(loaded_heart, (30, 30))
+        except FileNotFoundError:
+            print(f"[WARNING] Heart image not found at {heart_path}")
 
 
     def reset_game(self):
@@ -157,6 +170,10 @@ class GameBroker:
             if self.lives <= 0:
                 self.state = "GAME_OVER"
 
+                if self.score > self.high_score:
+                    self.high_score = self.score
+                    self.save_high_score()
+
         # --- 3. NUEVA: Player catches Golden Ladybug (Heal) ---
         # Detectamos si la mano toca a la mariquita dorada
         healing_hits = pygame.sprite.spritecollide(self.player, self.powerups, True)
@@ -188,6 +205,10 @@ class GameBroker:
             
             if remaining_time == 0:
                 self.state = "GAME_OVER"
+
+                if self.score > self.high_score:
+                    self.high_score = self.score
+                    self.save_high_score()
             
             # Progressive Difficulty: Faster spawns as time runs out
             dynamic_spawn_rate = max(200, int(SPAWN_RATE_MILLISECONDS * (remaining_time / GAME_DURATION_SECONDS)))
@@ -249,7 +270,8 @@ class GameBroker:
             
             self.draw_text("AGRO-DEFENDER", self.font_large, COLOR_WHITE, WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 - 50 + offset_y, True)
             self.draw_text("Press SPACE to Start", self.font_medium, COLOR_WHITE, WINDOW_WIDTH//2 + offset_x, WINDOW_HEIGHT//2 + 50 + offset_y, True)
-            
+            self.draw_text(f"RECORD: {self.high_score}", self.font_medium, (255, 215, 0), WINDOW_WIDTH//2, 50, True)
+
         elif self.state == "PLAYING":
             # Para que los sprites también vibren, podemos dibujarlos en una superficie temporal 
             # o simplemente desplazar sus posiciones de dibujo. 
@@ -261,7 +283,18 @@ class GameBroker:
             time_left = max(0, GAME_DURATION_SECONDS - ((current_time - self.start_time) // 1000))
             
             self.draw_text(f"Score: {self.score}", self.font_medium, COLOR_WHITE, 20, 20)
-            self.draw_text(f"Lives: {self.lives}", self.font_medium, COLOR_WHITE, 20, 60)
+
+            # HUD (Heads Up Display)
+            self.draw_text(f"Score: {self.score}", self.font_medium, COLOR_WHITE, 20, 20)
+            
+            # --- DIBUJAR CORAZONES EN LUGAR DE TEXTO ---
+            if self.heart_image:
+                for i in range(self.lives):
+                    # Los dibuja uno al lado del otro con un espacio de 35 píxeles
+                    self.screen.blit(self.heart_image, (20 + (i * 35), 65))
+            else:
+                # Fallback por si la imagen no carga
+                self.draw_text(f"Lives: {self.lives}", self.font_medium, COLOR_WHITE, 20, 60)
 
             if self.combo > 0:
                 combo_color = (255, 215, 0) if self.multiplier > 1 else COLOR_WHITE
@@ -276,7 +309,7 @@ class GameBroker:
             self.draw_text("GAME OVER", self.font_large, COLOR_WHITE, WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 50, True)
             self.draw_text(f"Final Score: {self.score}", self.font_medium, COLOR_WHITE, WINDOW_WIDTH//2, WINDOW_HEIGHT//2 + 20, True)
             self.draw_text("Press SPACE to Restart", self.font_medium, COLOR_WHITE, WINDOW_WIDTH//2, WINDOW_HEIGHT//2 + 80, True)
-
+            self.draw_text(f"RECORD: {self.high_score}", self.font_medium, (255, 215, 0), WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 90, True)
         pygame.display.flip()
 
    
@@ -294,3 +327,17 @@ class GameBroker:
         self.vision_worker.stop()
         pygame.quit()
         sys.exit()
+
+    def load_high_score(self):
+        """Lee el récord desde un archivo local."""
+        try:
+            with open(self.highscore_file, "r") as f:
+                return int(f.read())
+        except (FileNotFoundError, ValueError):
+            # Si el archivo no existe o está vacío, el récord es 0
+            return 0
+
+    def save_high_score(self):
+        """Guarda el récord actual en un archivo local."""
+        with open(self.highscore_file, "w") as f:
+            f.write(str(self.high_score))
